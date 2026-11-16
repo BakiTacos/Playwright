@@ -1,0 +1,7 @@
+node_modules/
+dist/
+storageState.json
+.env
+screenshots/
+logs/
+.DS_Store

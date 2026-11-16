@@ -1,0 +1,31 @@
+{
+  "name": "shopee-seller-autoboost",
+  "version": "1.0.0",
+  "description": "Playwright auto boost tool for Shopee Seller Center for 5 determined products",
+  "main": "dist/index.js",
+  "scripts": {
+    "login": "tsx src/auth.ts",
+    "boost": "tsx src/index.ts",
+    "watch": "tsx src/index.ts --watch",
+    "start": "tsx src/index.ts --watch",
+    "build": "tsc"
+  },
+  "keywords": [
+    "playwright",
+    "shopee",
+    "seller-center",
+    "auto-boost",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "^1.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
