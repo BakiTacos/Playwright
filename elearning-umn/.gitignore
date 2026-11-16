@@ -1,8 +1,0 @@
-node_modules
-dist
-.env
-storageState.json
-output/*.json
-output/*.csv
-screenshots/
-.DS_Store

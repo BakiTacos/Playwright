@@ -1,6 +1,7 @@
 import { Page, Locator } from 'playwright';
 import path from 'path';
 import { ProductConfig, AppConfig } from './config';
+import { dismissModalsWithAI } from './ai-agent';
 
 export interface ProductBoostResult {
   product: ProductConfig;
@@ -35,15 +36,18 @@ export async function takeDebugScreenshot(page: Page, screenshotsDir: string, na
 
 export async function dismissModals(page: Page): Promise<void> {
   try {
-    // 1. Tahap 1: Cek Sekarang / Check Now (Tunggu popup muncul ~3-4 detik)
+    // 1. Tahap 1: Cek Sekarang / Check Now (HANYA tombol primer di dalam .eds-modal:visible!)
     const checkNowBtn = page
-      .locator('button, [role="button"]')
-      .filter({ hasText: /Cek Sekarang|Check Now/i })
+      .locator(
+        '.eds-modal:visible button.eds-button--primary, ' +
+        'button.eds-button--primary:has-text("Cek Sekarang"), ' +
+        'button.eds-button--primary:has-text("Check Now")'
+      )
       .first();
 
-    if (await checkNowBtn.isVisible({ timeout: 3500 }).catch(() => false)) {
-      console.log('[*] Popup terdeteksi: Menekan "Cek Sekarang" / "Check Now"...');
-      await checkNowBtn.click().catch(() => {});
+    if (await checkNowBtn.isVisible({ timeout: 4500 }).catch(() => false)) {
+      console.log('[*] Popup modal terdeteksi: Menekan "Cek Sekarang" / "Check Now"...');
+      await checkNowBtn.click({ force: true, timeout: 2500 }).catch(() => {});
       await page.waitForTimeout(1500);
     }
 
@@ -55,7 +59,8 @@ export async function dismissModals(page: Page): Promise<void> {
 
     if (await skipBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
       console.log('[*] Popup onboarding/guide: Menekan "Skip" / "Lewati"...');
-      await skipBtn.click().catch(() => {});
+      await skipBtn.click({ force: true, timeout: 2500 }).catch(() => {});
+      await skipBtn.dispatchEvent('click').catch(() => {});
       await page.waitForTimeout(1500);
     }
 
@@ -67,7 +72,8 @@ export async function dismissModals(page: Page): Promise<void> {
 
     if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       console.log('[*] Dialog konfirmasi: Menekan "Batal" / "Cancel"...');
-      await cancelBtn.click().catch(() => {});
+      await cancelBtn.click({ force: true, timeout: 2000 }).catch(() => {});
+      await cancelBtn.dispatchEvent('click').catch(() => {});
       await page.waitForTimeout(1500);
     }
 
@@ -88,7 +94,8 @@ export async function dismissModals(page: Page): Promise<void> {
 
     if (await exitBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
       console.log('[*] Popup kedua terdeteksi: Menekan tombol exit/close (X)...');
-      await exitBtn.click().catch(() => {});
+      await exitBtn.click({ force: true, timeout: 2000 }).catch(() => {});
+      await exitBtn.dispatchEvent('click').catch(() => {});
       await page.waitForTimeout(1200);
     }
 
@@ -121,7 +128,7 @@ export async function verifySession(page: Page, baseUrl: string): Promise<boolea
   return true;
 }
 
-export async function navigateToProductList(page: Page, baseUrl: string): Promise<void> {
+export async function navigateToProductList(page: Page, baseUrl: string, config?: AppConfig): Promise<void> {
   const productListUrl = `${baseUrl}/portal/product/list/all`;
   console.log(`[*] Navigating to ${productListUrl}...`);
   await page.goto(productListUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -136,7 +143,23 @@ export async function navigateToProductList(page: Page, baseUrl: string): Promis
   console.log('[*] Menunggu popup selamat datang / update sistem jika ada...');
   await page.waitForTimeout(3500);
 
+  // 1. Coba tutup menggunakan selector rule-based terlebih dahulu
   await dismissModals(page);
+  await page.waitForTimeout(1500);
+
+  // 2. Hanya panggil AI Vision jika MASIH ada modal/overlay yang menutupi layar
+  const hasRemainingModal = await page
+    .locator('.eds-modal:visible, .shopee-modal:visible, [class*="modal__mask"]:visible')
+    .first()
+    .isVisible({ timeout: 1000 })
+    .catch(() => false);
+
+  if (hasRemainingModal && config?.ninerouterApiKey) {
+    console.log('[*] Masih ada popup tersisa, memanggil AI Vision Guardian...');
+    await dismissModalsWithAI(page, config);
+  } else {
+    console.log('[*] Layar terkonfirmasi bersih dari popup.');
+  }
 }
 
 async function findSearchInput(page: Page): Promise<Locator | null> {
@@ -166,7 +189,13 @@ export async function boostSingleProduct(
   console.log(`\n-----------------------------------------------------`);
   console.log(`[*] Processing product #${product.id}: "${product.name}" (query: "${product.searchQuery}")`);
 
-  await dismissModals(page);
+  const hasModalBeforeSearch = await page.locator('.eds-modal:visible, .shopee-modal:visible').first().isVisible({ timeout: 400 }).catch(() => false);
+  if (hasModalBeforeSearch) {
+    await dismissModals(page);
+    if (config.ninerouterApiKey) {
+      await dismissModalsWithAI(page, config);
+    }
+  }
 
   // 1. Enter search query and filter products
   const searchInput = await findSearchInput(page);
@@ -175,16 +204,22 @@ export async function boostSingleProduct(
     await searchInput.fill('');
     await searchInput.fill(product.searchQuery);
 
+    await searchInput.press('Enter').catch(() => {});
+
     const applyButton = page.locator('button:has-text("Apply"), button:has-text("Terapkan")').first();
-    if (await applyButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await applyButton.click();
-    } else {
-      await page.keyboard.press('Enter');
+    if (await applyButton.isVisible({ timeout: 800 }).catch(() => false)) {
+      await applyButton.click({ force: true, timeout: 1500 }).catch(() => {});
     }
     await page.waitForTimeout(2500); // Allow table to refresh
   }
 
-  await dismissModals(page);
+  const hasModalAfterSearch = await page.locator('.eds-modal:visible, .shopee-modal:visible').first().isVisible({ timeout: 400 }).catch(() => false);
+  if (hasModalAfterSearch) {
+    await dismissModals(page);
+    if (config.ninerouterApiKey) {
+      await dismissModalsWithAI(page, config);
+    }
+  }
 
   // 2. Identify the matching row index in the product table
   const matchInfo = await page.evaluate(
@@ -305,23 +340,33 @@ export async function boostSingleProduct(
       dropdownText.includes('Maksimum produk') ||
       dropdownText.includes('slot telah digunakan') ||
       dropdownText.includes('sudah digunakan') ||
+      dropdownText.includes('sedang digunakan') ||
+      dropdownText.includes('slot naikkan produk') ||
       itemText.includes('All 5 bump slots in use') ||
-      itemText.includes('Maksimum produk');
+      itemText.includes('Maksimum produk') ||
+      itemText.includes('sedang digunakan') ||
+      itemText.includes('telah digunakan') ||
+      itemText.includes('sudah digunakan');
 
-    if (isSlotFull) {
-      console.log('[!] All 5 bump slots in use (Shopee maximum active bumps reached)!');
+    // Also check if item has disabled class or attribute
+    const itemClass = (await bumpNowItem.getAttribute('class').catch(() => '')) || '';
+    const ariaDisabled = (await bumpNowItem.getAttribute('aria-disabled').catch(() => '')) || '';
+    const isDisabled = itemClass.includes('disabled') || ariaDisabled === 'true';
+
+    if (isSlotFull || isDisabled) {
+      console.log('[!] 5 Slot Naikkan Produk sedang digunakan / penuh (Shopee maximum active bumps reached)!');
       await takeDebugScreenshot(page, config.screenshotsDir, `slots_full_${product.id}`);
       await page.keyboard.press('Escape').catch(() => {});
       return {
         product,
         status: 'LIMIT_REACHED',
         remainingMinutes: 240,
-        message: 'All 5 bump slots in use. Re-used every 4h.',
+        message: '5 slot naikkan produk sedang digunakan (penuh). Dapat digunakan kembali setiap 4 jam.',
       };
     }
 
     console.log('[*] Clicking "Bump Now" / "Naikkan Produk" from dropdown...');
-    await bumpNowItem.click();
+    await bumpNowItem.click({ force: true, timeout: 3000 });
     await page.waitForTimeout(2000);
 
     // Verify if slots full limit popup appeared
@@ -370,7 +415,7 @@ export async function runBoostCycle(page: Page, config: AppConfig): Promise<Prod
     throw new Error('SESSION_INVALID: Please run "npm run login" to authenticate your session.');
   }
 
-  await navigateToProductList(page, config.baseUrl);
+  await navigateToProductList(page, config.baseUrl, config);
 
   const stillValid = await verifySession(page, config.baseUrl);
   if (!stillValid) {

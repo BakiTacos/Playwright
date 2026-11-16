@@ -18,6 +18,9 @@ export interface AppConfig {
   productsPath: string;
   screenshotsDir: string;
   products: ProductConfig[];
+  ninerouterApiKey?: string;
+  ninerouterBaseUrl: string;
+  ninerouterModel: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -46,6 +49,15 @@ export function loadConfig(): AppConfig {
   const headless = process.env.HEADLESS === 'true';
   const checkIntervalMinutes = parseInt(process.env.CHECK_INTERVAL_MINUTES || '15', 10);
 
+  const ninerouterApiKey = process.env.NINEROUTER_API_KEY || process.env.ROUTER_API_KEY || '';
+  const ninerouterBaseUrl = (
+    process.env.NINEROUTER_BASE_URL ||
+    process.env.ROUTER_BASE_URL ||
+    'http://localhost:20128/v1'
+  ).replace(/\/$/, '');
+  const ninerouterModel =
+    process.env.NINEROUTER_MODEL || process.env.ROUTER_MODEL || 'gemini-2.5-flash-lite';
+
   return {
     baseUrl,
     headless,
@@ -54,5 +66,8 @@ export function loadConfig(): AppConfig {
     productsPath,
     screenshotsDir,
     products,
+    ninerouterApiKey: ninerouterApiKey || undefined,
+    ninerouterBaseUrl,
+    ninerouterModel,
   };
 }

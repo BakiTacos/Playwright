@@ -6,6 +6,7 @@
   "scripts": {
     "login": "tsx src/auth.ts",
     "boost": "tsx src/index.ts",
+    "boost:watch": "tsx src/index.ts --watch",
     "watch": "tsx src/index.ts --watch",
     "start": "tsx src/index.ts --watch",
     "build": "tsc",
@@ -23,6 +24,7 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^16.4.7",
+    "openai": "^7.57.0",
     "playwright": "^1.50.0"
   },
   "devDependencies": {
