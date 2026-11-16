@@ -35,16 +35,69 @@ export async function takeDebugScreenshot(page: Page, screenshotsDir: string, na
 
 export async function dismissModals(page: Page): Promise<void> {
   try {
-    const modalClose = page
+    // 1. Tahap 1: Cek Sekarang / Check Now (Tunggu popup muncul ~3-4 detik)
+    const checkNowBtn = page
+      .locator('button, [role="button"]')
+      .filter({ hasText: /Cek Sekarang|Check Now/i })
+      .first();
+
+    if (await checkNowBtn.isVisible({ timeout: 3500 }).catch(() => false)) {
+      console.log('[*] Popup terdeteksi: Menekan "Cek Sekarang" / "Check Now"...');
+      await checkNowBtn.click().catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+
+    // 2. Tahap 2: Skip / Lewati
+    const skipBtn = page
+      .locator('button, a, span, div, [role="button"]')
+      .filter({ hasText: /^(Skip|Lewati)$/i })
+      .first();
+
+    if (await skipBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+      console.log('[*] Popup onboarding/guide: Menekan "Skip" / "Lewati"...');
+      await skipBtn.click().catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+
+    // 3. Tahap 3: Batal / Cancel (jika ada dialog konfirmasi)
+    const cancelBtn = page
+      .locator('button, a, span, div, [role="button"]')
+      .filter({ hasText: /^(Batal|Cancel)$/i })
+      .first();
+
+    if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      console.log('[*] Dialog konfirmasi: Menekan "Batal" / "Cancel"...');
+      await cancelBtn.click().catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+
+    // 4. Tahap 4: Popup kedua / Quick Bidding -> Tekan tombol exit/close (X / Tutup / Close)
+    const exitBtn = page
       .locator(
-        '.eds-modal:visible button.eds-modal__header-close-btn, .eds-modal:visible .eds-modal__close-btn, .eds-modal:visible [aria-label="Close"], .eds-modal:visible .eds-icon-close'
+        '.eds-modal:visible i.eds-modal__close, ' +
+        '.eds-modal:visible button.eds-modal__header-close-btn, ' +
+        '.eds-modal:visible .eds-modal__close-btn, ' +
+        '.eds-modal:visible [aria-label="Close"], ' +
+        '.eds-modal:visible .eds-icon-close, ' +
+        '.shopee-modal:visible [class*="close"], ' +
+        '[class*="modal"]:visible [class*="close"], ' +
+        'button:has-text("Tutup"):visible, ' +
+        'button:has-text("Close"):visible'
       )
       .first();
 
-    if (await modalClose.isVisible({ timeout: 1500 }).catch(() => false)) {
-      console.log('[*] Dismissing popup modal...');
-      await modalClose.click().catch(() => {});
-      await page.waitForTimeout(600);
+    if (await exitBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+      console.log('[*] Popup kedua terdeteksi: Menekan tombol exit/close (X)...');
+      await exitBtn.click().catch(() => {});
+      await page.waitForTimeout(1200);
+    }
+
+    // 5. Fallback tombol Escape jika masih ada sisa overlay popup
+    const anyModal = page.locator('.eds-modal:visible, .shopee-modal:visible, [class*="modal__mask"]:visible').first();
+    if (await anyModal.isVisible({ timeout: 1000 }).catch(() => false)) {
+      console.log('[*] Masih ada modal terdeteksi, menekan tombol Escape...');
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(800);
     }
   } catch {
     // ignore
@@ -78,6 +131,10 @@ export async function navigateToProductList(page: Page, baseUrl: string): Promis
   } catch {
     await page.waitForLoadState('networkidle').catch(() => {});
   }
+
+  // Jeda waktu agar popup yang delay/beranimasi (~2.5-3.5 detik) selesai tampil
+  console.log('[*] Menunggu popup selamat datang / update sistem jika ada...');
+  await page.waitForTimeout(3500);
 
   await dismissModals(page);
 }
@@ -179,60 +236,77 @@ export async function boostSingleProduct(
   await actionContainer.scrollIntoViewIfNeeded().catch(() => {});
   await page.waitForTimeout(500);
 
-  // Check if Action column already displays "Boosting" or active timer
+  // Check if Action column already displays "Boosting" / "Dinaikkan" or active timer
   const actionText = await actionContainer.innerText().catch(() => '');
   const countdownMinutes = parseCountdownToMinutes(actionText);
 
-  if (actionText.includes('Boosting') || countdownMinutes !== null) {
+  if (
+    actionText.includes('Boosting') ||
+    actionText.includes('Dinaikkan') ||
+    actionText.includes('Menaikkan') ||
+    countdownMinutes !== null
+  ) {
     const mins = countdownMinutes || 240;
-    console.log(`[i] Product is already boosting! Remaining: ~${mins} minutes.`);
+    console.log(`[i] Product is already boosting/dinaikkan! Remaining: ~${mins} minutes.`);
     return {
       product,
       status: 'ALREADY_BOOSTING',
       remainingMinutes: mins,
-      message: `Product is currently boosting. Remaining: ~${mins}m.`,
+      message: `Product is currently active. Remaining: ~${mins}m.`,
     };
   }
 
-  // 4. Click the "More" button in the Action column
-  const moreButton = actionContainer.locator('button:has-text("More"), span:has-text("More"), [class*="more"]').first();
+  // 4. Click the "More" / "Lainnya" button in the Action column
+  const moreButton = actionContainer
+    .locator('button:has-text("More"), span:has-text("More"), button:has-text("Lainnya"), span:has-text("Lainnya"), [class*="more"]')
+    .first();
 
   if (!(await moreButton.isVisible({ timeout: 3000 }).catch(() => false))) {
-    console.log('[!] Button "More" not found in the Action column.');
+    console.log('[!] Button "More" / "Lainnya" not found in the Action column.');
     await takeDebugScreenshot(page, config.screenshotsDir, `no_more_btn_${product.id}`);
     return {
       product,
       status: 'FAILED',
-      message: 'Button "More" could not be located in Action column.',
+      message: 'Button "More" / "Lainnya" could not be located in Action column.',
     };
   }
 
-  console.log('[*] Clicking "More" button in Action column...');
+  console.log('[*] Clicking "More" / "Lainnya" button in Action column...');
   await moreButton.click();
   await page.waitForTimeout(800);
 
-  // 5. Inspect the opened dropdown menu (.more-dropdown-menu:visible)
-  const dropdownMenu = page.locator('.more-dropdown-menu:visible').first();
+  // 5. Inspect the opened dropdown menu (.more-dropdown-menu:visible / .eds-dropdown-menu:visible)
+  const dropdownMenu = page.locator('.more-dropdown-menu:visible, .eds-dropdown-menu:visible').first();
   const dropdownText = await dropdownMenu.innerText().catch(() => '');
   const popoverCountdown = parseCountdownToMinutes(dropdownText);
 
   if (popoverCountdown !== null) {
-    console.log(`[i] "More" dropdown displays active timer: ~${popoverCountdown} mins remaining.`);
+    console.log(`[i] Dropdown displays active timer: ~${popoverCountdown} mins remaining.`);
     await page.keyboard.press('Escape').catch(() => {});
     return {
       product,
       status: 'ALREADY_BOOSTING',
       remainingMinutes: popoverCountdown,
-      message: `Product is currently boosting (~${popoverCountdown}m remaining).`,
+      message: `Product is currently active (~${popoverCountdown}m remaining).`,
     };
   }
 
-  // 6. Locate "Bump Now" item inside the visible dropdown
-  const bumpNowItem = page.locator('.more-dropdown-menu:visible .eds-dropdown-item').filter({ hasText: 'Bump Now' }).first();
+  // 6. Locate "Bump Now" / "Naikkan Produk" item inside the visible dropdown
+  const bumpNowItem = page
+    .locator('.more-dropdown-menu:visible, .eds-dropdown-menu:visible')
+    .locator('.eds-dropdown-item, li, div')
+    .filter({ hasText: /Bump Now|Naikkan Produk|Naikkan/i })
+    .first();
 
   if (await bumpNowItem.isVisible({ timeout: 2000 }).catch(() => false)) {
     const itemText = await bumpNowItem.innerText().catch(() => '');
-    const isSlotFull = dropdownText.includes('All 5 bump slots in use') || itemText.includes('All 5 bump slots in use');
+    const isSlotFull =
+      dropdownText.includes('All 5 bump slots in use') ||
+      dropdownText.includes('Maksimum produk') ||
+      dropdownText.includes('slot telah digunakan') ||
+      dropdownText.includes('sudah digunakan') ||
+      itemText.includes('All 5 bump slots in use') ||
+      itemText.includes('Maksimum produk');
 
     if (isSlotFull) {
       console.log('[!] All 5 bump slots in use (Shopee maximum active bumps reached)!');
@@ -246,7 +320,7 @@ export async function boostSingleProduct(
       };
     }
 
-    console.log('[*] Clicking "Bump Now" from "More" dropdown...');
+    console.log('[*] Clicking "Bump Now" / "Naikkan Produk" from dropdown...');
     await bumpNowItem.click();
     await page.waitForTimeout(2000);
 
@@ -254,7 +328,9 @@ export async function boostSingleProduct(
     const bodyText = await page.innerText('body').catch(() => '');
     if (
       bodyText.includes('All 5 bump slots in use') ||
-      bodyText.includes('Exceeded maximum number of bumped products')
+      bodyText.includes('Exceeded maximum number of bumped products') ||
+      bodyText.includes('Maksimum produk') ||
+      bodyText.includes('slot telah digunakan')
     ) {
       console.log('[!] Bump limit reached (All 5 bump slots currently in use)!');
       return {
@@ -264,25 +340,25 @@ export async function boostSingleProduct(
       };
     }
 
-    console.log(`[✓] "Bump Now" successfully triggered for product #${product.id}!`);
+    console.log(`[✓] Successfully triggered "Bump Now" / "Naikkan Produk" for product #${product.id}!`);
     await takeDebugScreenshot(page, config.screenshotsDir, `bumped_prod_${product.id}`);
 
     return {
       product,
       status: 'BOOSTED',
       remainingMinutes: 240, // Standard 4-hour cooldown
-      message: '"Bump Now" triggered successfully (cooldown 4h).',
+      message: '"Bump Now" / "Naikkan Produk" triggered successfully (cooldown 4h).',
     };
   }
 
-  console.log('[!] "Bump Now" was not found in the "More" dropdown.');
+  console.log('[!] "Bump Now" / "Naikkan Produk" was not found in the dropdown.');
   await takeDebugScreenshot(page, config.screenshotsDir, `no_bump_now_${product.id}`);
   await page.keyboard.press('Escape').catch(() => {});
 
   return {
     product,
     status: 'FAILED',
-    message: 'Option "Bump Now" was not found inside the "More" dropdown.',
+    message: 'Option "Bump Now" / "Naikkan Produk" was not found inside the "More" / "Lainnya" dropdown.',
   };
 }
 

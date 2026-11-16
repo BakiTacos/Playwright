@@ -1,0 +1,33 @@
+{
+  "name": "umn-elearning-playwright",
+  "version": "1.0.0",
+  "description": "Playwright automation tool to scrape timeline, assignments, quizzes, and deadlines from elearning.umn.ac.id",
+  "main": "dist/index.js",
+  "scripts": {
+    "login": "tsx src/auth.ts",
+    "scrape": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
+  },
+  "keywords": [
+    "playwright",
+    "elearning",
+    "umn",
+    "moodle",
+    "scraper",
+    "timeline",
+    "deadlines"
+  ],
+  "author": "Kevin",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "^1.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
