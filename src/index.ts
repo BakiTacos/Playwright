@@ -2,6 +2,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import fs from 'fs';
 import { loadConfig, AppConfig } from './config';
 import { runBoostCycle, ProductBoostResult } from './booster';
+import { sendOverallWebhook } from './notifier';
 
 function printSummary(results: ProductBoostResult[]): void {
   console.log('\n=====================================================');
@@ -97,11 +98,41 @@ async function main(): Promise<void> {
       await browser.close();
       browser = null;
 
+      const boostedCount = results.filter((r) => r.status === 'BOOSTED').length;
+      const alreadyBoostingCount = results.filter((r) => r.status === 'ALREADY_BOOSTING').length;
+      const failedCount = results.filter((r) => r.status === 'FAILED' || r.status === 'NOT_FOUND').length;
+      const waitMinutes = calculateNextWaitMinutes(results, config.checkIntervalMinutes);
+
+      const cycleStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' =
+        failedCount === 0 ? 'SUCCESS' : failedCount < results.length ? 'PARTIAL' : 'FAILED';
+
+      // Kirim satu laporan JSON keseluruhan langsung ke n8n
+      await sendOverallWebhook(config, {
+        account: config.accountName,
+        timestamp: new Date().toISOString(),
+        status: cycleStatus,
+        totalProducts: results.length,
+        summary: {
+          boosted: boostedCount,
+          alreadyBoosting: alreadyBoostingCount,
+          failed: failedCount,
+        },
+        nextRunInMinutes: isWatchMode ? waitMinutes : undefined,
+        products: results.map((r) => ({
+          id: r.product.id,
+          name: r.product.name,
+          searchQuery: r.product.searchQuery,
+          status: r.status,
+          isSuccess: r.status === 'BOOSTED' || r.status === 'ALREADY_BOOSTING',
+          remainingMinutes: r.remainingMinutes ?? null,
+          message: r.message,
+        })),
+      });
+
       if (!isWatchMode) {
         break;
       }
 
-      const waitMinutes = calculateNextWaitMinutes(results, config.checkIntervalMinutes);
       const nextRunTime = new Date(Date.now() + waitMinutes * 60 * 1000);
       console.log(`[⏳] Next cycle scheduled in ${waitMinutes} minutes (at ${nextRunTime.toLocaleTimeString()})...`);
 
@@ -111,6 +142,21 @@ async function main(): Promise<void> {
         await browser.close().catch(() => {});
       }
       console.error(`[ERROR] Cycle encountered an error: ${(err as Error).message}`);
+
+      // Kirim satu event error ke n8n
+      await sendOverallWebhook(config, {
+        account: config.accountName,
+        timestamp: new Date().toISOString(),
+        status: 'FAILED',
+        totalProducts: config.products.length,
+        summary: {
+          boosted: 0,
+          alreadyBoosting: 0,
+          failed: config.products.length,
+        },
+        products: [],
+        errorMessage: (err as Error).message,
+      });
 
       if ((err as Error).message.includes('SESSION_')) {
         console.error('[FATAL] Authentication failed. Exiting loop. Please run "npm run login".');

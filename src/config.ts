@@ -21,6 +21,8 @@ export interface AppConfig {
   ninerouterApiKey?: string;
   ninerouterBaseUrl: string;
   ninerouterModel: string;
+  n8nWebhookUrl?: string;
+  accountName: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -58,6 +60,10 @@ export function loadConfig(): AppConfig {
   const ninerouterModel =
     process.env.NINEROUTER_MODEL || process.env.ROUTER_MODEL || 'gemini-2.5-flash-lite';
 
+  const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || process.env.WEBHOOK_URL || '';
+  const accountName =
+    process.env.ACCOUNT_NAME || (process.cwd().toLowerCase().includes('akun2') ? 'Akun 2' : 'Akun 1');
+
   return {
     baseUrl,
     headless,
@@ -69,5 +75,7 @@ export function loadConfig(): AppConfig {
     ninerouterApiKey: ninerouterApiKey || undefined,
     ninerouterBaseUrl,
     ninerouterModel,
+    n8nWebhookUrl: n8nWebhookUrl || undefined,
+    accountName,
   };
 }
